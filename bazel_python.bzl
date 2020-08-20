@@ -1,0 +1,120 @@
+load("@bazel_tools//tools/python:toolchain.bzl", "py_runtime_pair")
+
+def bazel_python(venv_name = "bazel_python_venv"):
+    """Workspace rule setting up bazel_python for a repository.
+
+    Arguments
+    =========
+    @venv_name should match the 'name' argument given to the
+        bazel_python_interpreter call in the BUILD file.
+    """
+    native.register_toolchains("//:" + venv_name + "_toolchain")
+
+def bazel_python_interpreter(
+        python_version,
+        name = "bazel_python_venv",
+        requirements_file = None,
+        **kwargs):
+    """BUILD rule setting up a bazel_python interpreter (venv).
+
+    Arguments
+    =========
+    @python_version should be the Python version string to use (e.g. 3.7.4 is
+        the standard for DARG projects). You must run the setup_python.sh
+        script with this version number.
+    @name is your preferred Bazel name for referencing this. The default should
+        work unless you run into a name conflict.
+    @requirements_file should be the name of a file in the repository to use as
+        the pip requirements.
+    @kwargs are passed to bazel_python_venv.
+    """
+    bazel_python_venv(
+        name = name,
+        python_version = python_version,
+        requirements_file = requirements_file,
+        **kwargs
+    )
+
+    # https://stackoverflow.com/questions/47036855
+    native.py_runtime(
+        name = name + "_runtime",
+        files = ["//:" + name],
+        interpreter = "@bazel_python//:pywrapper.sh",
+        python_version = "PY3",
+    )
+
+    # https://github.com/bazelbuild/rules_python/blob/master/proposals/2019-02-12-design-for-a-python-toolchain.md
+    native.constraint_value(
+        name = name + "_constraint",
+        constraint_setting = "@bazel_tools//tools/python:py3_interpreter_path",
+    )
+
+    native.platform(
+        name = name + "_platform",
+        constraint_values = [
+            ":python3_constraint",
+        ],
+    )
+
+    py_runtime_pair(
+        name = name + "_runtime_pair",
+        py3_runtime = name + "_runtime",
+    )
+
+    native.toolchain(
+        name = name + "_toolchain",
+        target_compatible_with = [],
+        toolchain = "//:" + name + "_runtime_pair",
+        toolchain_type = "@bazel_tools//tools/python:toolchain_type",
+    )
+
+def _bazel_python_venv_impl(ctx):
+    """A Bazel rule to set up a Python virtual environment.
+
+    Also installs requirements specified by @ctx.attr.requirements_file.
+    """
+    if "BAZEL_PYTHON_DIR" not in ctx.var:
+        fail("You must run setup_python.sh for " + ctx.attr.python_version)
+    python_parent_dir = ctx.var.get("BAZEL_PYTHON_DIR")
+    python_version = ctx.attr.python_version
+    python_dir = python_parent_dir + "/" + python_version
+
+    # TODO: Fail if python_dir does not exist.
+    venv_dir = ctx.actions.declare_directory("bazel_python_venv_installed")
+    inputs = []
+    command = """
+        export PATH={py_dir}/bin:$PATH
+        export PATH={py_dir}/include:$PATH
+        export PATH={py_dir}/lib:$PATH
+        export PATH={py_dir}/share:$PATH
+        export PYTHON_PATH={py_dir}:{py_dir}/bin:{py_dir}/include:{py_dir}/lib:{py_dir}/share
+        python3 -m venv {out_dir}
+        source {out_dir}/bin/activate
+    """
+    if ctx.attr.requirements_file:
+        command += "pip3 install -r " + ctx.file.requirements_file.path
+        inputs.append(ctx.file.requirements_file)
+    command += ctx.attr.run_after_pip
+    command += """
+        REPLACEME=$PWD/'{out_dir}'
+        REPLACEWITH='$PWD/bazel_python_venv_installed'
+        # This prevents sed from trying to modify the directory. We may want to
+        # do a more targeted sed in the future.
+        rm -rf {out_dir}/bin/__pycache__
+        sed -i'' -e s:$REPLACEME:$REPLACEWITH:g {out_dir}/bin/*
+    """
+    ctx.actions.run_shell(
+        command = command.format(py_dir = python_dir, out_dir = venv_dir.path),
+        inputs = inputs,
+        outputs = [venv_dir],
+    )
+    return [DefaultInfo(files = depset([venv_dir]))]
+
+bazel_python_venv = rule(
+    implementation = _bazel_python_venv_impl,
+    attrs = {
+        "python_version": attr.string(),
+        "requirements_file": attr.label(allow_single_file = True),
+        "run_after_pip": attr.string(),
+    },
+)
