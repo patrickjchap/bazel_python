@@ -118,3 +118,35 @@ bazel_python_venv = rule(
         "run_after_pip": attr.string(),
     },
 )
+
+def bazel_python_coverage_report(name, test_paths, code_paths):
+    """Adds a rule to build the coverage report.
+
+    @name is the name of the target which, when run, creates the coverage
+        report.
+    @test_paths should be a list of the py_test targets for which coverage
+        has been run. Bash wildcards are supported.
+    @code_paths should point to the Python code for which you want to compute
+        the coverage.
+    """
+    test_paths = " ".join([
+        "bazel-out/*/testlogs/" + test_path + "/test.outputs/outputs.zip"
+        for test_path in test_paths])
+    code_paths = " ".join([code_path for code_path in code_paths])
+    # For generating the coverage report.
+    native.sh_binary(
+        name = name,
+        srcs = ["@bazel_python//:coverage_report.sh"],
+        deps = [":_dummy_coverage_report"],
+        args = [test_paths, code_paths],
+    )
+
+    # This is only to get bazel_python_venv as a data dependency for
+    # coverage_report above. For some reason, this doesn't work if we directly put
+    # it on the sh_binary. This is a known issue:
+    # https://github.com/bazelbuild/bazel/issues/1147#issuecomment-428698802
+    native.sh_library(
+        name = "_dummy_coverage_report",
+        srcs = ["@bazel_python//:coverage_report.sh"],
+        data = ["//:bazel_python_venv"],
+    )
