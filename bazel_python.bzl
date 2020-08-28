@@ -94,6 +94,8 @@ def _bazel_python_venv_impl(ctx):
     if ctx.attr.requirements_file:
         command += "pip3 install -r " + ctx.file.requirements_file.path
         inputs.append(ctx.file.requirements_file)
+    for src in ctx.attr.run_after_pip_srcs:
+        inputs.extend(src.files.to_list())
     command += ctx.attr.run_after_pip
     command += """
         REPLACEME=$PWD/'{out_dir}'
@@ -116,6 +118,7 @@ bazel_python_venv = rule(
         "python_version": attr.string(),
         "requirements_file": attr.label(allow_single_file = True),
         "run_after_pip": attr.string(),
+        "run_after_pip_srcs": attr.label_list(allow_files = True),
     },
 )
 
