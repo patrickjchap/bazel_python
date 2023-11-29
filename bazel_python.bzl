@@ -106,10 +106,8 @@ def _bazel_python_venv_impl(ctx):
         source {out_dir}/bin/activate || exit 1
     """
     if ctx.attr.requirements_file:
-        command += (
-            "pip3 install --upgrade pip"
-            f"pip3 install -r {ctx.file.requirements_file.path} || exit 1"
-        )
+        command += "pip3 install --upgrade pip\n"
+        command += "pip3 install -r " + ctx.file.requirements_file.path + " || exit 1"
         inputs.append(ctx.file.requirements_file)
     for src in ctx.attr.run_after_pip_srcs:
         inputs.extend(src.files.to_list())
