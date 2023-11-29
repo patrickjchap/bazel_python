@@ -14,6 +14,7 @@ def bazel_python_interpreter(
         python_version,
         name = "bazel_python_venv",
         requirements_file = None,
+        upgrade_pip = False,
         **kwargs):
     """BUILD rule setting up a bazel_python interpreter (venv).
 
@@ -32,6 +33,7 @@ def bazel_python_interpreter(
         name = name,
         python_version = python_version,
         requirements_file = requirements_file,
+        upgrade_pip = upgrade_pip,
         **kwargs
     )
 
@@ -105,6 +107,10 @@ def _bazel_python_venv_impl(ctx):
         python3 -m venv {out_dir} || exit 1
         source {out_dir}/bin/activate || exit 1
     """
+    if ctx.attr.upgrade_pip:
+        command += """
+            pip3 install --upgrade pip
+        """
     if ctx.attr.requirements_file:
         command += "pip3 install -r " + ctx.file.requirements_file.path + " || exit 1"
         inputs.append(ctx.file.requirements_file)
